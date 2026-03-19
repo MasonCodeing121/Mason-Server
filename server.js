@@ -12,6 +12,7 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 5000;
 
 const rooms = {};
+const legacyConnections = {}; // For legacy protocol support
 
 function getRoomSummaries() {
   return Object.values(rooms).map(r => ({
@@ -40,6 +41,8 @@ io.on('connection', (socket) => {
   console.log(`[connect] ${socket.id}`);
 
   socket.emit('server:stats', getServerStats());
+
+  // --- ROOM-BASED PROTOCOL ---
 
   socket.on('room:create', ({ roomId, name, maxPlayers = 8, gameData = {} } = {}) => {
     const id = roomId || `room_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -155,34 +158,4 @@ io.on('connection', (socket) => {
     console.log(`[admin:broadcast] ${message}`);
   });
 
-  socket.on('disconnect', () => {
-    console.log(`[disconnect] ${socket.id}`);
-    const rid = socket.data.roomId;
-    if (rid) leaveRoom(socket, rid);
-  });
-
-  function leaveRoom(sock, rid) {
-    const room = rooms[rid];
-    if (!room) return;
-    const player = room.players[sock.id];
-    delete room.players[sock.id];
-    sock.leave(rid);
-    sock.data.roomId = undefined;
-    if (player) {
-      io.to(rid).emit('room:player_left', { room, player });
-      console.log(`[room:leave] ${player.name} <- ${rid}`);
-    }
-    if (Object.keys(room.players).length === 0) {
-      delete rooms[rid];
-      console.log(`[room:empty_deleted] ${rid}`);
-    }
-    io.emit('server:stats', getServerStats());
-  }
-});
-
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Socket.io game server running on port ${PORT}`);
-});
+  // --- LEGACY PROTOCOL SUPPORT (
